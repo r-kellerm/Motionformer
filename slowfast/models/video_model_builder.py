@@ -188,7 +188,7 @@ class VisionTransformer(nn.Module):
         self.head = (nn.Linear(self.embed_dim, num_classes) if num_classes > 0
             else nn.Identity())
 
-    def forward_features(self, x):
+    def forward_features(self, x, output_attentions, head_mask):
         if self.video_input:
             x = x[0]
         B = x.shape[0]
@@ -255,21 +255,31 @@ class VisionTransformer(nn.Module):
         x = self.pos_drop(x)
 
         # Encoding using transformer layers
+        all_attn_spatial = []
+        all_attn_traj = []
+        all_hidden_states = []
         for i, blk in enumerate(self.blocks):
-            x = blk(
+            head_mask_l = head_mask[i] if head_mask is not None else None
+            x, attn_space, attn_traj = blk(
                 x,
                 seq_len=npatch,
                 num_frames=self.temporal_resolution,
                 approx=self.cfg.VIT.APPROX_ATTN_TYPE,
-                num_landmarks=self.cfg.VIT.APPROX_ATTN_DIM
+                num_landmarks=self.cfg.VIT.APPROX_ATTN_DIM,
+                head_mask=head_mask_l
             )
+            if output_attentions:
+                all_attn_spatial.append(attn_space)
+                all_attn_traj.append(attn_traj)
+                all_hidden_states.append(x)
 
         x = self.norm(x)[:, 0]
         x = self.pre_logits(x)
-        return x
 
-    def forward(self, x):
-        x = self.forward_features(x)
+        return x, all_attn_traj, all_attn_spatial, all_hidden_states
+
+    def forward(self, x, output_attentions=False, head_mask=None):
+        x, att_temp, att_spatial, hidden_states = self.forward_features(x, output_attentions=output_attentions, head_mask=head_mask)
         x = self.head_drop(x)
         if isinstance(self.num_classes, (list,)) and len(self.num_classes) > 1:
             output = []
@@ -283,4 +293,4 @@ class VisionTransformer(nn.Module):
             x = self.head(x)
             if not self.training:
                 x = torch.nn.functional.softmax(x, dim=-1)
-            return x
+            return x, att_temp, att_spatial, hidden_states

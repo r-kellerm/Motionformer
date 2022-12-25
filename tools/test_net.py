@@ -78,7 +78,7 @@ def perform_test(test_loader, model, test_meter, cfg, writer=None):
                 B, C, T, H, W = inputs[0].shape
                 shuffled_indices = np.random.permutation(T)
                 inputs = [inputs[0][:, :, shuffled_indices, :, :]]
-            preds = model(inputs)
+            preds, _, _, _ = model(inputs)
 
             # Gather all the predictions across all the devices to perform ensemble.
             if isinstance(labels, (dict,)):
@@ -215,6 +215,7 @@ def test(cfg):
             )
         else:
             test_meter = TestMeter(
+                cfg,
                 len(test_loader.dataset)
                 // (cfg.TEST.NUM_ENSEMBLE_VIEWS * cfg.TEST.NUM_SPATIAL_CROPS),
                 cfg.TEST.NUM_ENSEMBLE_VIEWS * cfg.TEST.NUM_SPATIAL_CROPS,

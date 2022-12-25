@@ -81,7 +81,7 @@ def train_epoch(
         train_meter.data_toc()
 
         with torch.cuda.amp.autocast(enabled=cfg.SOLVER.USE_MIXED_PRECISION):
-            preds = model(inputs)
+            preds, _, _, _ = model(inputs)
             if mixup_fn is None:
                 if isinstance(labels, (dict,)):
                     labels = {k: v.cuda() for k, v in labels.items()}
@@ -298,7 +298,7 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
         val_meter.data_toc()
 
         with torch.cuda.amp.autocast(enabled=cfg.SOLVER.USE_MIXED_PRECISION):
-            preds = model(inputs)
+            preds, _, _ = model(inputs)
             if isinstance(labels, (dict,)) and cfg.TRAIN.DATASET == "Epickitchens":
                 # Compute the verb accuracies.
                 verb_top1_acc, verb_top5_acc = metrics.topk_accuracies(

@@ -53,7 +53,7 @@ class JointSpaceTimeAttention(nn.Module):
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
-    def forward(self, x, seq_len=196, num_frames=8, approx='none', num_landmarks=128):
+    def forward(self, x, seq_len=196, num_frames=8, approx='none', num_landmarks=128, head_mask=None):
         B, N, C = x.shape
         qkv = self.qkv(x).reshape(
             B, N, 3, 
@@ -66,6 +66,8 @@ class JointSpaceTimeAttention(nn.Module):
         attn = (q @ k.transpose(-2, -1)) * self.scale
         attn = attn.softmax(dim=-1)
         attn = self.attn_drop(attn)
+        if head_mask is not None:
+            attn = attn * head_mask.view((1, head_mask.shape[0], 1, 1))
         x = (attn @ v).transpose(1, 2).reshape(B, N, C)
 
         x = self.proj(x)
@@ -163,7 +165,7 @@ class TrajectoryAttention(nn.Module):
         # kept to facilitate replication, but is not recommended.
         self.use_original_code = use_original_code
 
-    def forward(self, x, seq_len=196, num_frames=8, approx='none', num_landmarks=128):
+    def forward(self, x, seq_len=196, num_frames=8, approx='none', num_landmarks=128, head_mask=None):
         B, N, C = x.shape
         P = seq_len
         F = num_frames
@@ -236,6 +238,8 @@ class TrajectoryAttention(nn.Module):
             q_dot_k = rearrange(q_dot_k, 'b q (f n) -> b q f n', f=F)
             space_attn = (self.scale * q_dot_k).softmax(dim=-1)
             attn = self.attn_drop(space_attn)
+            if head_mask is not None:
+                attn = attn * head_mask.view((1, head_mask.shape[0], 1, 1)) # TODO
             v_ = rearrange(v_, 'b (f n) d -> b f n d', f=F, n=P)
             x = torch.einsum('b q f n, b f n d -> b q f d', attn, v_)
 
@@ -264,7 +268,7 @@ class TrajectoryAttention(nn.Module):
 
         x = self.proj(x)
         x = self.proj_drop(x)
-        return x, attn
+        return x, attn, space_attn
 
 
 def get_attention_module(
@@ -304,18 +308,20 @@ class Block(nn.Module):
         self.mlp = Mlp(
             in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
 
-    def forward(self, x, seq_len=196, num_frames=8, approx='none', num_landmarks=128):
-        x = x + self.drop_path(
-            self.attn(
-                self.norm1(x), 
-                seq_len=seq_len, 
-                num_frames=num_frames, 
+    def forward(self, x, seq_len=196, num_frames=8, approx='none', num_landmarks=128, head_mask=None):
+        att_x, att_traj, att_spatial = self.attn(
+                self.norm1(x),
+                seq_len=seq_len,
+                num_frames=num_frames,
                 approx=approx,
-                num_landmarks=num_landmarks
-            )[0]
+                num_landmarks=num_landmarks,
+                head_mask=head_mask,
+            )
+        x = x + self.drop_path(
+            att_x
         )
         x = x + self.drop_path(self.mlp(self.norm2(x)))
-        return x
+        return x, att_traj, att_spatial
 
 
 class DividedSpaceTimeBlock(nn.Module):
