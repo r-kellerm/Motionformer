@@ -14,6 +14,14 @@ from sklearn.metrics import average_precision_score
 import slowfast.utils.logging as logging
 import slowfast.utils.metrics as metrics
 import slowfast.utils.misc as misc
+
+from sklearn.metrics import average_precision_score
+from sklearn.metrics import roc_curve, auc
+from sklearn.metrics import roc_auc_score, confusion_matrix, accuracy_score
+from sklearn.metrics import RocCurveDisplay
+import matplotlib.pyplot as plt
+from scipy.special import softmax
+
 logger = logging.get_logger(__name__)
 
 
@@ -394,6 +402,20 @@ class TestMeter(object):
                     topk, prec=2
                 )
         logging.log_json_stats(self.stats)
+        y_true = self.video_labels.detach().cpu().numpy()
+        pred_scores = self.video_preds.detach().cpu().numpy()
+        pred_labels = [np.argmax(pred_score) for pred_score in pred_scores]
+        pred_scores_sm = np.array([softmax(pred_score) for pred_score in pred_scores])
+        self.stats["AUC"] = roc_auc_score(y_true, pred_scores[:, 1]) 
+        false_positive_rate, true_positive_rate, thresholds = roc_curve(y_true, pred_scores_sm[:, 1]) 
+        print("AUC (on softmax): {}".format(auc(false_positive_rate, true_positive_rate)))
+        false_positive_rate, true_positive_rate, thresholds = roc_curve(y_true, pred_scores[:,1])
+        print("AUC (on raw socres): {}".format(auc(false_positive_rate, true_positive_rate)))
+        acc = accuracy_score(y_true, pred_labels)
+        print("Accuracy score: {}".format(acc))
+        conf_mat = confusion_matrix(y_true, pred_labels)
+        print("Conf mat:")
+        print(conf_mat)
 
 
 class ScalarMeter(object):
