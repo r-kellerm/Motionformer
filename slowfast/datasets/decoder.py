@@ -7,6 +7,7 @@ import random
 import torch
 import torchvision.io as io
 from . import utils as utils
+import cv2
 
 
 def temporal_sampling(frames, start_idx, end_idx, num_samples):
@@ -212,6 +213,14 @@ def torchvision_decode(
     return v_frames, fps, decode_all_video
 
 
+def cv2_frames_length(vid_path):
+    video = cv2.VideoCapture(vid_path)
+    frames_length = 0
+    if video.isOpened():
+        frames_length = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+    video.release()
+    return frames_length
+
 def pyav_decode(
     container, sampling_rate, num_frames, clip_idx, num_clips=10, target_fps=30
 ):
@@ -244,8 +253,17 @@ def pyav_decode(
     # videos does not support fetching the decoding information, for that case
     # it will get None duration.
     fps = float(container.streams.video[0].average_rate)
+
+    #orig_duration = duration
+    tb = float(container.streams.video[0].time_base)
+
     frames_length = container.streams.video[0].frames
+    if frames_length == 0:
+        frames_length = cv2_frames_length(container.name)
+
     duration = container.streams.video[0].duration
+    #if duration is None and orig_duration is not None:
+    #    duration = orig_duration / tb
 
     if duration is None:
         # If failed to fetch the decoding information, decode the entire video.
@@ -260,7 +278,10 @@ def pyav_decode(
             clip_idx,
             num_clips,
         )
-        timebase = duration / frames_length
+        if frames_length > 0:
+            timebase = duration / frames_length
+        else:
+            timebase = tb
         video_start_pts = int(start_idx * timebase)
         video_end_pts = int(end_idx * timebase)
 
